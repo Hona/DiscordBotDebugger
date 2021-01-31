@@ -48,6 +48,10 @@ else
                 Content="@(message.Content)"
                 Datetime="@((DateTime.Now - message.CreationTimestamp.ToLocalTime()).Humanize() + " ago")">
             </Comment>
+            @foreach (var attachment in message.Attachments)
+            {
+                <img src="@attachment.Url" width="@attachment.Width" height="@attachment.Height" alt="@attachment.FileName">
+            }
         }
     </div>
 }
