@@ -1,0 +1,45 @@
+﻿@layout EmptyLayout
+
+@page "/"
+@using DSharpPlus
+@using DiscordBotDebugger.Web.Helpers
+
+@inject IDiscordBotService DiscordBotService
+@inject NavigationManager NavigationManager
+
+<div class="login-wrapper">
+    <Title Level="1">Discord Bot Login</Title>
+    <InputPassword @bind-Value="_token" />
+    <CheckboxGroup Options="_presenceOptions" OnChange="OnPresenceChange"/>
+    
+    <Button Type="primary" OnClick="OnLoginClick" Block>Login</Button>
+</div>
+
+@code {
+    private string _token = string.Empty;
+
+    private readonly CheckboxOption[] _presenceOptions = Enum.GetNames<DiscordIntents>().Select(x => new CheckboxOption
+    {
+        Checked = false,
+        Disabled = false,
+        Label = x.ToProperCase(),
+        Value = x
+    }).ToArray();
+
+    protected override void OnInitialized()
+    {
+        DiscordBotService.PresenceIntents = 0;
+    }
+
+    private void OnLoginClick()
+    {
+        DiscordBotService.Token = _token;
+        NavigationManager.NavigateTo("dashboard");
+    }
+
+    private void OnPresenceChange(string[] checkedValues)
+    {
+        DiscordBotService.PresenceIntents = checkedValues.Select(Enum.Parse<DiscordIntents>)
+            .Aggregate((output, nextValue) => output | nextValue);
+    }
+}

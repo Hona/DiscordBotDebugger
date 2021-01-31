@@ -1,0 +1,5 @@
+﻿.site-layout-background {
+    background: #fff;
+    display: flex; 
+    flex-direction: column;
+}

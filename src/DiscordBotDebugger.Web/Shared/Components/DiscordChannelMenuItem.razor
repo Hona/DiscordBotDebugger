@@ -1,0 +1,32 @@
+﻿@using DSharpPlus.Entities
+@using DSharpPlus
+@inject IDiscordBotService DiscordBotService
+
+<AntDesign.MenuItem Key="@Channel.Id.ToString()">
+    <DiscordSvg ChannelType="@Channel.Type"/>
+    <span style="position: absolute; top: 50%; transform: translate(24px,-50%);">
+        @if (HasAccess())
+        {
+            @Channel.Name
+        }
+        else
+        {
+            <span style="text-decoration: line-through;">
+                @Channel.Name
+            </span>
+        }
+
+    </span>
+</AntDesign.MenuItem>
+
+@code {
+    [Parameter]
+    public DiscordChannel Channel { get; set; }
+
+    private bool HasAccess()
+    {
+        var client = DiscordBotService.Client.CurrentUser;
+
+        return (Channel.PermissionsFor(Channel.Guild.Members.First(x => x.Key == client.Id).Value) & Permissions.AccessChannels) == Permissions.AccessChannels;
+    }
+}

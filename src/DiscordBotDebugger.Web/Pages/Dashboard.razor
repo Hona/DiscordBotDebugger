@@ -1,0 +1,139 @@
+﻿@page "/dashboard"
+@using DSharpPlus
+@using System.Security.Cryptography
+@using DSharpPlus.Entities
+@using DSharpPlus.Net.WebSocket
+@using Microsoft.Extensions.Logging
+@using Microsoft.Extensions.Logging.Console
+@using Humanizer;
+
+@inject IDiscordBotService DiscordBotService
+@inject NavigationManager NavigationManager
+@inject ILoggerFactory Logger
+@inject IJSRuntime JsRuntime
+
+<h3>Dashboard</h3>
+
+@if (DiscordBotService.SelectedChannel == null)
+{
+    <p>Select a channel to view it</p>
+}
+else if (!_hasPermissions)
+{
+    <strong>Bot does not have permission to access this channel</strong>
+}
+else if (DiscordBotService.SelectedChannel.Type == ChannelType.Voice)
+{
+    @if (!DiscordBotService.SelectedChannel.Users.Any())
+    {
+        <p>No one is in this channel at the moment</p>
+    }
+    else
+    {
+        foreach (var user in DiscordBotService.SelectedChannel.Users)
+        {
+            <Avatar Size="64" Src="@(user.AvatarUrl ?? user.DefaultAvatarUrl)"/>
+        }
+    }
+}
+else
+{
+    <div id="chat-wrapper" class="chat-wrapper">
+        <Button Style="margin: 12px;" OnClick="LoadMoreMessages">Load more messages</Button>
+        @foreach (var message in _loadedMessages.OrderBy(x => x.Timestamp))
+        {
+            <Comment
+                Author="@(message.Author.Username)"
+                Avatar="@(message.Author.AvatarUrl ?? message.Author.DefaultAvatarUrl)"
+                Content="@(message.Content)"
+                Datetime="@((DateTime.Now - message.CreationTimestamp.ToLocalTime()).Humanize() + " ago")">
+            </Comment>
+        }
+    </div>
+}
+
+@code {
+    private List<DiscordMessage> _loadedMessages = new();
+    private bool _scrollToBottomOnRender;
+    private bool _hasPermissions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(DiscordBotService.Token))
+        {
+            NavigationManager.NavigateTo("/");
+        }
+
+        if (DiscordBotService.Client == null)
+        {
+            DiscordBotService.Client = new DiscordClient(new DiscordConfiguration
+            {
+                Token = DiscordBotService.Token,
+                TokenType = TokenType.Bot,
+                Intents = DiscordBotService.PresenceIntents,
+                AutoReconnect = true,
+                LoggerFactory = Logger,
+                MessageCacheSize = 1000
+            });
+
+            await DiscordBotService.Client.ConnectAsync();
+
+            DiscordBotService.ChannelSet += OnSelectedChannelChanged;
+            DiscordBotService.MessageSent += RegisterMessageSentEvent;
+        }
+    }
+
+    private async void OnSelectedChannelChanged(object sender, EventArgs e)
+    {
+        _loadedMessages = new List<DiscordMessage>();
+        _hasPermissions = CheckPermissions();
+
+        if (!_hasPermissions)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        await LoadMoreMessages();
+        StateHasChanged();
+    }
+
+    private bool CheckPermissions()
+    {
+        var client = DiscordBotService.Client.CurrentUser;
+        var channel = DiscordBotService.SelectedChannel;
+
+        return (channel.PermissionsFor(channel.Guild.Members.First(x => x.Key == client.Id).Value) & Permissions.AccessChannels) == Permissions.AccessChannels;
+    }
+
+    private async Task LoadMoreMessages()
+    {
+        if (!_loadedMessages.Any())
+        {
+            var messages = await DiscordBotService.SelectedChannel.GetMessagesAsync();
+            _scrollToBottomOnRender = true;
+            _loadedMessages.AddRange(messages);
+            return;
+        }
+
+        var oldestMessage = _loadedMessages.OrderBy(x => x.Timestamp).First();
+
+        var newMessages = await DiscordBotService.SelectedChannel.GetMessagesBeforeAsync(oldestMessage.Id);
+        _loadedMessages.AddRange(newMessages);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_scrollToBottomOnRender)
+        {
+            JsRuntime.InvokeVoidAsync("scrollToBottom");
+        }
+        _scrollToBottomOnRender = false;
+    }
+
+    private void RegisterMessageSentEvent(object sender, DiscordMessage message)
+    {
+        _loadedMessages.Add(message);
+        StateHasChanged();
+    }
+}

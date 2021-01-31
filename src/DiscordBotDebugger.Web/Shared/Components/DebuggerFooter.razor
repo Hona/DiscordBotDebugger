@@ -1,0 +1,21 @@
+﻿@inject IDiscordBotService DiscordBotService
+
+<Input @bind-Value="@_text" OnPressEnter="OnPressEnter" DebounceMilliseconds="0"/>
+
+@code {
+    private string _text = string.Empty;
+
+    private async Task OnPressEnter()
+    {
+        var selectedChannel = DiscordBotService.SelectedChannel;
+
+        if (selectedChannel == null)
+        {
+            // For now return, in the future run 'commands'
+            return;
+        }
+
+        var message = await selectedChannel.SendMessageAsync(_text);
+        DiscordBotService.RegisterSentMessage(message);
+    }
+}

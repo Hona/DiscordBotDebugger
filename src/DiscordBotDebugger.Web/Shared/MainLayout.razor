@@ -1,0 +1,145 @@
+﻿@using DSharpPlus.Entities
+@using DSharpPlus
+@using DiscordBotDebugger.Web.Helpers
+@inherits LayoutComponentBase
+
+@inject IDiscordBotService DiscordBotService
+
+<Layout Style="height: 100vh;">
+    <Sider class="hona-sider" Width="400">
+        <Menu OnMenuItemClicked="OnMenuItemClicked" Theme="MenuTheme.Dark" Mode="MenuMode.Inline">
+            @if (_guilds == null)
+            {
+                <i>Loading...</i>
+            }
+            else
+            {
+                foreach (var guild in _guilds)
+                {
+                    <SubMenu Style="padding-left: 8px; height: auto;" Key="@guild.Id.ToString()" TitleTemplate="@GetGuildRenderFragment(guild)">
+                        @foreach (var category in guild.Channels.Values.Where(x => x.IsCategory).OrderBy(x => x.Position))
+                        {
+                            <SubMenu Style="padding-left: 8px; height: auto;" Key="@category.Id.ToString()" Title="@category.Name">
+                                @foreach (var categoryChannel in category.Children.OrderBy(x => x.Position))
+                                {
+                                    <DiscordChannelMenuItem Channel="@categoryChannel"/>
+                                }
+                            </SubMenu>
+                        }
+                        @foreach (var uncategorizedChannel in guild.Channels.Values.Where(x => x.Parent == null && !x.IsCategory).OrderBy(x => x.Position))
+                        {
+                            <DiscordChannelMenuItem Channel="@uncategorizedChannel"/>
+                        }
+                    </SubMenu>
+                }
+            }
+        </Menu>
+    </Sider>
+    <Layout>
+        <Header Style="display: flex; justify-content: space-between; align-items: center; background: #fff;">
+            <Title Level="2" Style="margin: 0">Hona's Discord Bot Debugger</Title>
+            <Button Style="padding: 4px;">
+                <Icon Style="font-size: 24px" Type="user" OnClick="() => _drawerVisible = true"/>
+            </Button>
+        </Header>
+        <Content Style=" margin: 24px 16px 0;">
+            <div class="site-layout-background" style="padding: 24px; height: 100%">
+                @Body
+            </div>
+        </Content>
+        <Footer Style="display: flex; justify-content: center; align-items: center; margin: 0 16px; padding: 24px 0 ;background-color: rgb(217, 227, 241) !important"><DebuggerFooter /></Footer>
+    </Layout>
+</Layout>
+
+<Drawer Closable="true" Visible="_drawerVisible" Placement="right" Title='("Users in Channel")' OnClose="() => _drawerVisible = false">
+    @if (DiscordBotService.SelectedChannel?.Users == null)
+    {
+        <p>Select a channel first</p>
+    }
+    else if (!DiscordBotService.SelectedChannel.Users.Any())
+    {
+        <p>No users in channel</p>
+    }
+    else
+    {
+        foreach (var userRoleGrouping in DiscordBotService.SelectedChannel.Users
+            .OrderBy(x => x.DisplayName)
+            .Select(x => new UserHighestRole(x, x.Roles.Where(x => x.IsHoisted).OrderByDescending(role => role.Position).FirstOrDefault()))
+            .GroupBy(x => x.HighestRole)
+            .OrderByDescending(x => x.Key?.Position ?? int.MinValue))
+        {
+            // Title
+            <Title Level="3">@(userRoleGrouping.Key?.Name ?? "Online")</Title>
+            foreach (var user in userRoleGrouping.Select(x => x.DiscordUser))
+            {
+                <Avatar Size="large" Src="@(user.AvatarUrl ?? user.DefaultAvatarUrl)" />
+                @if (user is DiscordMember member)
+                {
+                    <p style="color: rgb(@(userRoleGrouping.Key?.Color.R ?? 0), @(userRoleGrouping.Key?.Color.G ?? 0), @(userRoleGrouping.Key?.Color.B ?? 0))">@member.DisplayName</p>
+                }
+                else
+                {
+                    <p style="color: rgb(@(userRoleGrouping.Key?.Color.R ?? 0), @(userRoleGrouping.Key?.Color.G ?? 0), @(userRoleGrouping.Key?.Color.B ?? 0))">@user.Username</p>
+                }
+            }
+        }
+    }
+</Drawer>
+@code {
+    private List<DiscordGuild> _guilds;
+
+    private bool _drawerVisible;
+
+    private class UserHighestRole
+    {
+        public UserHighestRole(DiscordUser discordUser, DiscordRole highestRole)
+        {
+            DiscordUser = discordUser;
+            HighestRole = highestRole;
+        }
+
+        public DiscordUser DiscordUser { get; set; }
+        public DiscordRole HighestRole { get; set; }
+    }
+
+    protected override void OnInitialized()
+    {
+        // Update state based on events
+        DiscordBotService.ClientSet += OnDiscordClientSet;
+    }
+
+    private void OnDiscordClientSet(object sender, EventArgs e)
+    {
+        DiscordBotService.Client.GuildDownloadCompleted += UpdateGuildsOnDiscordEvent;
+
+        DiscordBotService.Client.ChannelCreated += UpdateGuildsOnDiscordEvent;
+        DiscordBotService.Client.ChannelDeleted += UpdateGuildsOnDiscordEvent;
+        DiscordBotService.Client.ChannelUpdated += UpdateGuildsOnDiscordEvent;
+
+        DiscordBotService.Client.GuildCreated += UpdateGuildsOnDiscordEvent;
+        DiscordBotService.Client.GuildUpdated += UpdateGuildsOnDiscordEvent;
+        DiscordBotService.Client.GuildDeleted += UpdateGuildsOnDiscordEvent;
+    }
+
+    private async Task UpdateGuildsOnDiscordEvent(object a, object b)
+    {
+        _guilds = DiscordBotService.Client.Guilds.Values.ToList();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private RenderFragment GetGuildRenderFragment(DiscordGuild guild)
+    {
+        return @<Tooltip Placement="@PlacementType.Right" Title="@guild.Name" Style="display: flex; justify-content: center; align-items: center;">
+                   <Avatar Src="@guild.IconUrl" Size="64" Style="margin: 8px 0"/>
+               </Tooltip>;
+    }
+
+    private async Task OnMenuItemClicked(MenuItem menuItem)
+    {
+        // MenuItem's key contains the discord channel ID
+        var channelId = ulong.Parse(menuItem.Key);
+
+        DiscordBotService.SelectedChannel = await DiscordBotService.Client.GetChannelAsync(channelId);
+        StateHasChanged();
+    }
+}
